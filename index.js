@@ -5,12 +5,10 @@ const express = require('express');
 const app = express();
 app.use(express.json());
 
-// --- 1. THE UPTIMEROBOT FIX ---
 app.get('/', (req, res) => {
     res.status(200).send('Bot is Online and Awake! 🚀');
 });
 
-// --- INLINE MEMORY DATABASE ---
 let memoryDb = {
     "rebkheicarpio@gmail.com": "850523727099199529"
 };
@@ -19,7 +17,6 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] 
 });
 
-// --- COMMAND REGISTRATION ---
 const commands = [
     new SlashCommandBuilder()
         .setName('link')
@@ -59,7 +56,6 @@ app.post('/nas-webhook', async (req, res) => {
         const member = await guild.members.fetch(discordId);
 
         if (member) {
-            // --- UPDATED SAFETY CHECK: PROTECT ADMINS AND MANAGERS ---
             const isProtected = member.permissions.has(PermissionFlagsBits.Administrator) || 
                                 member.permissions.has(PermissionFlagsBits.ManageGuild) || 
                                 member.permissions.has(PermissionFlagsBits.ManageRoles) || 
