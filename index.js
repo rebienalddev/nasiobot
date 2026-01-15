@@ -1,39 +1,26 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
-const fs = require('fs');
+const mongoose = require('mongoose'); // Using MongoDB instead of fs
 
 const app = express();
 app.use(express.json());
 
-const DB_FILE = './database.json';
+// --- MONGODB CONNECTION ---
+// This connects your bot to a remote database in the cloud
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('Connected to Remote MongoDB! ✅'))
+    .catch(err => console.error('MongoDB Connection Error:', err));
 
-// --- CRASH-PROOF DATABASE HELPERS ---
-const getDb = () => {
-    try {
-        if (!fs.existsSync(DB_FILE)) {
-            fs.writeFileSync(DB_FILE, '{}');
-            return {};
-        }
-        const data = fs.readFileSync(DB_FILE, 'utf8').trim();
-        // Safety: If file is empty string, return {}, otherwise parse it
-        return data ? JSON.parse(data) : {}; 
-    } catch (e) {
-        console.error("Database Read Error (Crashing Prevented):", e);
-        return {};
-    }
-};
-
-const saveDb = (data) => {
-    try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.error("Database Write Error:", e);
-    }
-};
+// Define a Schema (This is the structure of your data)
+const userSchema = new mongoose.Schema({
+    email: { type: String, required: true, unique: true },
+    discordId: { type: String, required: true }
+});
+const User = mongoose.model('User', userSchema);
 
 app.get('/', (req, res) => {
-    res.status(200).send('Bot is Online and Awake! 🚀');
+    res.status(200).send('Bot is Online and Connected to Cloud DB! 🚀');
 });
 
 const client = new Client({ 
@@ -47,10 +34,10 @@ client.once('ready', async () => {
     const commands = [
         new SlashCommandBuilder()
             .setName('link')
-            .setDescription('Link your email to your Discord account')
+            .setDescription('Link your email to your Discord account permanently')
             .addStringOption(option => 
                 option.setName('email')
-                    .setDescription('The email you used for your subscription')
+                    .setDescription('The email used for subscription')
                     .setRequired(true))
     ].map(command => command.toJSON());
 
@@ -70,38 +57,37 @@ app.post('/nas-webhook', async (req, res) => {
     try {
         const rawEmail = req.body.email || req.body.data?.email; 
         const email = rawEmail?.toLowerCase().trim();
-        if (!email) return res.status(200).send('Error: No email provided in request.');
+        if (!email) return res.status(200).send('Error: No email provided.');
 
-        const db = getDb();
-        const discordId = db[email];
+        // Search the Cloud Database instead of the local file
+        const userData = await User.findOne({ email: email });
 
-        if (!discordId) {
-            return res.status(200).send(`Error: Email ${email} not found in database.`);
+        if (!userData) {
+            return res.status(200).send(`Error: Email ${email} not found in Remote DB.`);
         }
 
         const guild = await client.guilds.fetch(process.env.GUILD_ID);
-        const member = await guild.members.fetch(discordId).catch(() => null);
+        const member = await guild.members.fetch(userData.discordId).catch(() => null);
 
         if (!member) {
-            return res.status(200).send('Error: User not in the server.');
+            return res.status(200).send('Error: User not in server.');
         }
 
-        // Hierarchy Check: Bot must be physically ABOVE the user in Discord settings
+        // Permission Check
         if (!member.kickable) {
-            return res.status(200).send('Error: Bot role is too low in the hierarchy to kick this user.');
+            return res.status(200).send('Error: Bot role is too low in the hierarchy.');
         }
 
         try {
-            await member.send("⚠️ Your subscription has expired, and you have been removed from the server.");
-        } catch (e) { console.log("DMs closed for this user."); }
+            await member.send("⚠️ Your subscription has expired. You have been removed from the server.");
+        } catch (e) { console.log("DMs closed."); }
 
         await member.kick('Subscription expired on Nas.io');
         
-        // Cleanup: Remove from DB after successful kick
-        delete db[email];
-        saveDb(db);
+        // Remove from Cloud Database after successful kick
+        await User.deleteOne({ email: email });
         
-        return res.status(200).send('Success: Member Kicked.');
+        return res.status(200).send('Success: Member Kicked and Data Removed.');
 
     } catch (error) {
         console.error('Webhook Error:', error);
@@ -116,18 +102,21 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'link') {
         try {
             const email = interaction.options.getString('email').toLowerCase().trim();
-            const db = getDb();
             
-            db[email] = interaction.user.id;
-            saveDb(db);
+            // Upsert: Create if new, update if exists in MongoDB
+            await User.findOneAndUpdate(
+                { email: email },
+                { discordId: interaction.user.id },
+                { upsert: true, new: true }
+            );
 
             await interaction.reply({ 
-                content: `✅ Success! Your Discord is now linked to **${email}**. This is saved to database.json.`, 
+                content: `✅ Success! Linked to **${email}** in the Cloud Database. Data is now permanent.`, 
                 ephemeral: true 
             });
         } catch (error) {
             console.error("Link Command Error:", error);
-            await interaction.reply({ content: "❌ Failed to save your link to the file.", ephemeral: true });
+            await interaction.reply({ content: "❌ Failed to save to Remote DB.", ephemeral: true });
         }
     }
 });
@@ -135,6 +124,4 @@ client.on('interactionCreate', async interaction => {
 client.login(process.env.DISCORD_TOKEN);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
