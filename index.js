@@ -1,11 +1,11 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
 
 const app = express();
 app.use(express.json());
 
-// --- 1. THE UPTIMEROBOT FIX (Add this!) ---
+// --- 1. THE UPTIMEROBOT FIX ---
 app.get('/', (req, res) => {
     res.status(200).send('Bot is Online and Awake! 🚀');
 });
@@ -59,9 +59,15 @@ app.post('/nas-webhook', async (req, res) => {
         const member = await guild.members.fetch(discordId);
 
         if (member) {
-            // Safety Check: Don't kick yourself/admins
-            if (member.permissions.has('Administrator')) {
-                return res.status(200).send('Skipped: User is an admin.');
+            // --- UPDATED SAFETY CHECK: PROTECT ADMINS AND MANAGERS ---
+            const isProtected = member.permissions.has(PermissionFlagsBits.Administrator) || 
+                                member.permissions.has(PermissionFlagsBits.ManageGuild) || 
+                                member.permissions.has(PermissionFlagsBits.ManageRoles) || 
+                                member.permissions.has(PermissionFlagsBits.ManageChannels);
+
+            if (isProtected) {
+                console.log(`Skipped kick for protected user: ${member.user.tag}`);
+                return res.status(200).send('Skipped: User has management roles.');
             }
 
             try {
@@ -93,7 +99,6 @@ client.on('interactionCreate', async interaction => {
 
 client.login(process.env.DISCORD_TOKEN);
 
-// Use Render's dynamic port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
