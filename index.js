@@ -8,24 +8,28 @@ app.use(express.json());
 
 const DB_FILE = './database.json';
 
-// Helper: Safely load database
+// --- CRASH-PROOF DATABASE HELPERS ---
 const getDb = () => {
     try {
         if (!fs.existsSync(DB_FILE)) {
             fs.writeFileSync(DB_FILE, '{}');
             return {};
         }
-        const data = fs.readFileSync(DB_FILE, 'utf8');
-        return JSON.parse(data || '{}');
+        const data = fs.readFileSync(DB_FILE, 'utf8').trim();
+        // Safety: If file is empty string, return {}, otherwise parse it
+        return data ? JSON.parse(data) : {}; 
     } catch (e) {
-        console.error("Database Read Error:", e);
+        console.error("Database Read Error (Crashing Prevented):", e);
         return {};
     }
 };
 
-// Helper: Safely save database
 const saveDb = (data) => {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error("Database Write Error:", e);
+    }
 };
 
 app.get('/', (req, res) => {
@@ -66,7 +70,7 @@ app.post('/nas-webhook', async (req, res) => {
     try {
         const rawEmail = req.body.email || req.body.data?.email; 
         const email = rawEmail?.toLowerCase().trim();
-        if (!email) return res.status(200).send('Error: No email provided.');
+        if (!email) return res.status(200).send('Error: No email provided in request.');
 
         const db = getDb();
         const discordId = db[email];
@@ -82,18 +86,18 @@ app.post('/nas-webhook', async (req, res) => {
             return res.status(200).send('Error: User not in the server.');
         }
 
-        // Check Role Hierarchy - Bot must be ABOVE the member to kick
+        // Hierarchy Check: Bot must be physically ABOVE the user in Discord settings
         if (!member.kickable) {
-            return res.status(200).send('Error: Bot role is too low to kick this user.');
+            return res.status(200).send('Error: Bot role is too low in the hierarchy to kick this user.');
         }
 
         try {
             await member.send("⚠️ Your subscription has expired, and you have been removed from the server.");
-        } catch (e) { console.log("DMs closed."); }
+        } catch (e) { console.log("DMs closed for this user."); }
 
         await member.kick('Subscription expired on Nas.io');
         
-        // Remove from DB after successful kick
+        // Cleanup: Remove from DB after successful kick
         delete db[email];
         saveDb(db);
         
@@ -118,12 +122,12 @@ client.on('interactionCreate', async interaction => {
             saveDb(db);
 
             await interaction.reply({ 
-                content: `✅ Success! Your Discord is now linked to **${email}**.`, 
+                content: `✅ Success! Your Discord is now linked to **${email}**. This is saved to database.json.`, 
                 ephemeral: true 
             });
         } catch (error) {
             console.error("Link Command Error:", error);
-            await interaction.reply({ content: "❌ Failed to save your link.", ephemeral: true });
+            await interaction.reply({ content: "❌ Failed to save your link to the file.", ephemeral: true });
         }
     }
 });
