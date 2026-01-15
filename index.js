@@ -3,6 +3,12 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require
 const express = require('express');
 
 const app = express();
+app.use(express.json());
+
+// --- 1. THE UPTIMEROBOT FIX (Add this!) ---
+app.get('/', (req, res) => {
+    res.status(200).send('Bot is Online and Awake! 🚀');
+});
 
 // --- INLINE MEMORY DATABASE ---
 let memoryDb = {
@@ -13,7 +19,7 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] 
 });
 
-// --- COMMAND REGISTRATION LOGIC ---
+// --- COMMAND REGISTRATION ---
 const commands = [
     new SlashCommandBuilder()
         .setName('link')
@@ -29,21 +35,17 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     try {
-        console.log('Started refreshing application (/) commands.');
         await rest.put(
             Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID),
             { body: commands },
         );
-        console.log('Successfully reloaded application (/) commands.');
+        console.log('Successfully reloaded (/) commands.');
     } catch (error) {
-        console.error(error);
+        console.error('Registration Error:', error);
     }
 });
 
-// --- REST OF YOUR LOGIC ---
-app.use(express.json());
-
-// Webhook for Nas.io / Zapier
+// --- WEBHOOK FOR KICKING ---
 app.post('/nas-webhook', async (req, res) => {
     const rawEmail = req.body.email || req.body.data?.email; 
     const email = rawEmail?.toLowerCase().trim();
@@ -57,9 +59,14 @@ app.post('/nas-webhook', async (req, res) => {
         const member = await guild.members.fetch(discordId);
 
         if (member) {
+            // Safety Check: Don't kick yourself/admins
+            if (member.permissions.has('Administrator')) {
+                return res.status(200).send('Skipped: User is an admin.');
+            }
+
             try {
                 await member.send("⚠️ You have been kicked because your subscription has expired.");
-            } catch (e) { console.log("DMs closed for user."); }
+            } catch (e) { console.log("DMs closed."); }
 
             await member.kick('Subscription expired on Nas.io');
             delete memoryDb[email];
@@ -71,15 +78,12 @@ app.post('/nas-webhook', async (req, res) => {
     }
 });
 
-// Handling the Link Command
+// --- COMMAND INTERACTION ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
-
     if (interaction.commandName === 'link') {
         const email = interaction.options.getString('email').toLowerCase().trim();
         memoryDb[email] = interaction.user.id;
-        
-        console.log(`Linked ${email} to ${interaction.user.id}`);
         await interaction.reply({ 
             content: `✅ Success! Your Discord is now linked to **${email}**.`, 
             ephemeral: true 
@@ -88,4 +92,9 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-app.listen(process.env.PORT || 3000);
+
+// Use Render's dynamic port
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+});
