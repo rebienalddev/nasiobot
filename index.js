@@ -1,18 +1,17 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
-const DATA_FILE = path.join(__dirname, 'database.json');
 
-// --- AUTO-INITIALIZE DATABASE ---
-// This creates the file on Render's disk immediately so Zapier doesn't see "No DB"
-if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({}), 'utf8');
-    console.log("📁 Created a fresh database.json on the server!");
-}
+// --- THE NUCLEAR FIX: INLINE MEMORY DATABASE ---
+// We use a variable instead of a file so Render/Zapier never see "No DB" again.
+let memoryDb = {
+    "rebkheicarpio@gmail.com": "850523727099199529",
+    "asdw@gmail.com": "850523727099199529",
+    "wdas@gmail.com": "850523727099199529",
+    "joel+38247924793@nas.io": "850523727099199529" // Added the Zapier test email
+};
 
 // Initialize Discord Bot
 const client = new Client({ 
@@ -31,55 +30,28 @@ app.get('/', (req, res) => {
     res.status(200).send('Bot is Online and Awake! 🚀');
 });
 
-function saveUser(discordId, email) {
-    let data = {};
-    if (fs.existsSync(DATA_FILE)) {
-        try {
-            data = JSON.parse(fs.readFileSync(DATA_FILE));
-        } catch (e) {
-            data = {};
-        }
-    }
-    data[email.toLowerCase()] = discordId;
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
-// Welcome Message
-client.on('guildMemberAdd', async (member) => {
-    try {
-        await member.send(
-            `👋 Welcome! Sync your account by typing this in the server:\n` +
-            `\`/link email:your-nasio-email@example.com\``
-        );
-    } catch (error) {
-        console.error(`Could not DM ${member.user.tag}`);
-    }
-});
-
+// Link Command Logic (Now saves to memory)
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
     if (interaction.commandName === 'link') {
-        const email = interaction.options.getString('email');
-        saveUser(interaction.user.id, email);
+        const email = interaction.options.getString('email').toLowerCase();
+        memoryDb[email] = interaction.user.id; // Save to variable
+        console.log(`Linked ${email} to ${interaction.user.id}`);
         await interaction.reply({ content: `✅ Linked to **${email}**!`, ephemeral: true });
     }
 });
 
+// Webhook for Nas.io / Zapier
 app.post('/nas-webhook', async (req, res) => {
     const { email } = req.body;
     console.log(`Received kick signal for: ${email}`);
 
-    // Check if DB exists (it should now, because of the auto-init above)
-    if (!fs.existsSync(DATA_FILE)) {
-        return res.status(404).send('No DB.');
-    }
-
-    const data = JSON.parse(fs.readFileSync(DATA_FILE));
-    const discordId = data[email?.toLowerCase()];
+    // Check the variable instead of a file
+    const discordId = memoryDb[email?.toLowerCase()];
 
     if (!discordId) {
-        console.log(`User with email ${email} not found in database.`);
-        return res.status(404).send('User not found.');
+        console.log(`User not found for email: ${email}`);
+        return res.status(404).send('User not found in memory.');
     }
 
     try {
