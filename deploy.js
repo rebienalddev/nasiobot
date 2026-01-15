@@ -15,12 +15,16 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
     try {
-        console.log('Registering commands...');
+        console.log('Started refreshing application (/) commands globally...');
+
         await rest.put(
-            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+            // This route registers the command for every server the bot is in
+            Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands },
         );
-        console.log('✅ Commands registered!');
+
+        console.log('✅ Successfully reloaded application (/) commands globally!');
+        console.log('Note: It may take up to an hour for global commands to appear in all servers.');
     } catch (error) {
         console.error(error);
     }
