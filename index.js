@@ -11,7 +11,8 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMembers, 
-        GatewayIntentBits.GuildMessages
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent // Added to ensure compatibility with message-based events
     ] 
 });
 
@@ -31,7 +32,21 @@ function saveUser(discordId, email) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// 2. Handle the /link command from Discord
+// NEW: Welcome Message Feature
+// This event triggers whenever someone joins the server
+client.on('guildMemberAdd', async (member) => {
+    try {
+        await member.send(
+            `👋 Welcome to the server, **${member.user.username}**!\n\n` +
+            `To keep your access, please sync your account by typing this command in the server:\n` +
+            `\`/link email:your-nasio-email@example.com\``
+        );
+        console.log(`Sent welcome DM to ${member.user.tag}`);
+    } catch (error) {
+        console.error(`Could not send DM to ${member.user.tag}. (DMs might be closed)`);
+    }
+});
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
