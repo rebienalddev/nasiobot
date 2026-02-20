@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
 const mongoose = require('mongoose'); // Using MongoDB instead of fs
 
@@ -38,6 +38,7 @@ client.once('ready', async () => {
             .addStringOption(option => 
                 option.setName('email')
                     .setDescription('The email used for subscription')
+                    .setRequired(true))
                     .setRequired(true)),
         new SlashCommandBuilder()
             .setName('members')
@@ -126,55 +127,23 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: "❌ Failed to save to Remote DB.", ephemeral: true });
         }
     } else if (interaction.commandName === 'members') {
-        await interaction.deferReply({ ephemeral: true });
         try {
             const users = await User.find({});
-            if (!users || users.length === 0) {
-                await interaction.editReply({ content: "No subscribers found in the database." });
-                return;
-            }
+            const count = users.length;
             
-            const pageSize = 10;
-            let currentPage = 0;
-            const totalPages = Math.ceil(users.length / pageSize);
+            // Build a list string (Discord has a 2000 char limit, so we truncate if needed)
+            let userList = users.map(u => `• <@${u.discordId}> (${u.email})`).join('\n');
+            if (userList.length > 1900) {
+                userList = userList.substring(0, 1900) + '\n... (list truncated)';
+            }
 
-            const generateEmbed = (page) => {
-                const start = page * pageSize;
-                const end = start + pageSize;
-                const currentUsers = users.slice(start, end);
-                const listString = currentUsers.map(u => `• ${u.discordId} (${u.email})`).join('\n');
-                
-                return new EmbedBuilder()
-                    .setTitle(`Subscriber List (Total: ${users.length})`)
-                    .setDescription(listString || 'No users.')
-                    .setFooter({ text: `Page ${page + 1} of ${totalPages}` })
-                    .setColor(0x0099FF);
-            };
-
-            const generateRow = (page) => {
-                return new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder().setCustomId('prev').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0),
-                        new ButtonBuilder().setCustomId('next').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page === totalPages - 1)
-                    );
-            };
-
-            const response = await interaction.editReply({ content: null, embeds: [generateEmbed(currentPage)], components: [generateRow(currentPage)] });
-
-            const collector = response.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300000 }); // 5 minutes
-
-            collector.on('collect', async i => {
-                if (i.customId === 'prev') currentPage = Math.max(0, currentPage - 1);
-                if (i.customId === 'next') currentPage = Math.min(totalPages - 1, currentPage + 1);
-                await i.update({ embeds: [generateEmbed(currentPage)], components: [generateRow(currentPage)] });
-            });
-
-            collector.on('end', () => {
-                interaction.editReply({ components: [] }).catch(() => {});
+            await interaction.reply({ 
+                content: `**Total Subscribers: ${count}**\n\n${userList || 'No subscribers yet.'}`, 
+                ephemeral: true 
             });
         } catch (error) {
             console.error("Members Command Error:", error);
-            await interaction.editReply({ content: `❌ Error fetching members list: ${error.message}` });
+            await interaction.reply({ content: "❌ Error fetching members list.", ephemeral: true });
         }
     } else if (interaction.commandName === 'prune-unsubscribed') {
         await interaction.deferReply({ ephemeral: true });
