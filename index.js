@@ -5,6 +5,7 @@ const mongoose = require('mongoose'); // Using MongoDB instead of fs
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Fix: Handle Zapier form data
 
 // --- MONGODB CONNECTION ---
 // This connects your bot to a remote database in the cloud
@@ -61,15 +62,18 @@ client.once('ready', async () => {
 
 // --- WEBHOOK FOR KICKING ---
 app.post('/nas-webhook', async (req, res) => {
+    console.log('🔹 Webhook Received:', JSON.stringify(req.body, null, 2)); // Fix: Debugging Log
+
     try {
-        const rawEmail = req.body.email || req.body.data?.email; 
+        const rawEmail = req.body.email || req.body.data?.email || req.body.payload?.email; 
         const email = rawEmail?.toLowerCase().trim();
-        if (!email) return res.status(200).send('Error: No email provided.');
+        if (!email) return res.status(400).send('Error: No email provided in payload.');
 
         // Search the Cloud Database instead of the local file
         const userData = await User.findOne({ email: email });
 
         if (!userData) {
+            console.log(`⚠️ Email ${email} not found in database. Skipping kick.`);
             return res.status(200).send(`Error: Email ${email} not found in Remote DB.`);
         }
 
@@ -77,11 +81,13 @@ app.post('/nas-webhook', async (req, res) => {
         const member = await guild.members.fetch(userData.discordId).catch(() => null);
 
         if (!member) {
+            console.log(`⚠️ User ${userData.discordId} not found in server.`);
             return res.status(200).send('Error: User not in server.');
         }
 
         // Permission Check
         if (!member.kickable) {
+            console.log(`❌ Cannot kick user ${member.user.tag}. Check bot role hierarchy.`);
             return res.status(200).send('Error: Bot role is too low in the hierarchy.');
         }
 
@@ -94,6 +100,7 @@ app.post('/nas-webhook', async (req, res) => {
         // Remove from Cloud Database after successful kick
         await User.deleteOne({ email: email });
         
+        console.log(`✅ Kicked ${member.user.tag} and removed from DB.`);
         return res.status(200).send('Success: Member Kicked and Data Removed.');
 
     } catch (error) {
