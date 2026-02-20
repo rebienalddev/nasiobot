@@ -38,7 +38,14 @@ client.once('ready', async () => {
             .addStringOption(option => 
                 option.setName('email')
                     .setDescription('The email used for subscription')
-                    .setRequired(true))
+                    .setRequired(true)),
+        new SlashCommandBuilder()
+            .setName('members')
+            .setDescription('View real-time subscriber list'),
+        new SlashCommandBuilder()
+            .setName('prune-unsubscribed')
+            .setDescription('Automatically kick users who are not subscribed')
+            .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
     ].map(command => command.toJSON());
 
     try {
@@ -117,6 +124,54 @@ client.on('interactionCreate', async interaction => {
         } catch (error) {
             console.error("Link Command Error:", error);
             await interaction.reply({ content: "❌ Failed to save to Remote DB.", ephemeral: true });
+        }
+    } else if (interaction.commandName === 'members') {
+        try {
+            const users = await User.find({});
+            const count = users.length;
+            
+            // Build a list string (Discord has a 2000 char limit, so we truncate if needed)
+            let userList = users.map(u => `• <@${u.discordId}> (${u.email})`).join('\n');
+            if (userList.length > 1900) {
+                userList = userList.substring(0, 1900) + '\n... (list truncated)';
+            }
+
+            await interaction.reply({ 
+                content: `**Total Subscribers: ${count}**\n\n${userList || 'No subscribers yet.'}`, 
+                ephemeral: true 
+            });
+        } catch (error) {
+            console.error("Members Command Error:", error);
+            await interaction.reply({ content: "❌ Error fetching members list.", ephemeral: true });
+        }
+    } else if (interaction.commandName === 'prune-unsubscribed') {
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            const guild = interaction.guild;
+            const allMembers = await guild.members.fetch(); // Fetch all current server members
+            const dbUsers = await User.find({}); // Fetch all subscribed users from DB
+            const subscribedIds = new Set(dbUsers.map(u => u.discordId));
+
+            let kickedCount = 0;
+            let failCount = 0;
+
+            for (const [id, member] of allMembers) {
+                // Safety: Don't kick bots, the owner, or Admins
+                if (member.user.bot || id === guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator)) continue;
+
+                if (!subscribedIds.has(id)) {
+                    if (member.kickable) {
+                        await member.kick('Not found in subscriber database');
+                        kickedCount++;
+                    } else {
+                        failCount++;
+                    }
+                }
+            }
+            await interaction.editReply(`✅ **Prune Complete**\nRemoved: ${kickedCount} users.\nFailed to remove (permission issues): ${failCount} users.`);
+        } catch (error) {
+            console.error("Prune Command Error:", error);
+            await interaction.editReply("❌ An error occurred while pruning users.");
         }
     }
 });
