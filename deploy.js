@@ -64,10 +64,12 @@ client.once('ready', async () => {
 // Connect Zapier "New Member" trigger to this URL: /nas-signup
 app.post('/nas-signup', async (req, res) => {
     console.log('🔹 Signup Webhook Received:', JSON.stringify(req.body, null, 2));
+    console.log('🔹 Query Params:', JSON.stringify(req.query, null, 2)); // Debug: Check URL params
     try {
-        const rawEmail = req.body.email || req.body.data?.email || req.body.payload?.email;
+        // Check body, nested data, or query parameters
+        const rawEmail = req.body.email || req.body.data?.email || req.body.payload?.email || req.query.email;
         const email = rawEmail?.toLowerCase().trim();
-        if (!email) return res.status(400).send('Error: No email provided.');
+        if (!email) return res.status(400).json({ error: 'No email provided. Please map "email" in Zapier Data fields.' });
 
         // Add to DB (Whitelist) so they can link later
         await User.findOneAndUpdate(
@@ -91,9 +93,10 @@ app.post('/nas-webhook', async (req, res) => {
     console.log('🔹 Webhook Received:', JSON.stringify(req.body, null, 2)); // Fix: Debugging Log
 
     try {
-        const rawEmail = req.body.email || req.body.data?.email || req.body.payload?.email; 
+        // Check body, nested data, or query parameters
+        const rawEmail = req.body.email || req.body.data?.email || req.body.payload?.email || req.query.email; 
         const email = rawEmail?.toLowerCase().trim();
-        if (!email) return res.status(400).send('Error: No email provided in payload.');
+        if (!email) return res.status(400).json({ error: 'No email provided. Please map "email" in Zapier Data fields.' });
 
         // Search the Cloud Database instead of the local file
         const userData = await User.findOne({ email: email });
