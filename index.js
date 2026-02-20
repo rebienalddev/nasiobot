@@ -142,7 +142,7 @@ client.on('interactionCreate', async interaction => {
                 const start = page * itemsPerPage;
                 const end = start + itemsPerPage;
                 const pageUsers = users.slice(start, end);
-                const userList = pageUsers.map(u => `• ${u.discordId}`).join('\n');
+                const userList = pageUsers.map(u => `• ${u.discordId} : ${u.email}`).join('\n');
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('prev').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0),
