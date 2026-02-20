@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const express = require('express');
 const mongoose = require('mongoose'); // Using MongoDB instead of fs
 
@@ -133,26 +133,44 @@ client.on('interactionCreate', async interaction => {
                 await interaction.editReply({ content: "No subscribers found in the database." });
                 return;
             }
-            const count = users.length;
             
-            // Fetch usernames to display real names instead of mentions
-            const userLines = await Promise.all(users.map(async (u) => {
-                if (!u.discordId) return `• N/A (${u.email})`;
-                try {
-                    const discordUser = await client.users.fetch(u.discordId);
-                    return `• **${discordUser.username}** (${u.email})`;
-                } catch (e) {
-                    return `• <@${u.discordId}> (${u.email})`;
-                }
-            }));
+            const pageSize = 10;
+            let currentPage = 0;
+            const totalPages = Math.ceil(users.length / pageSize);
 
-            let userList = userLines.join('\n');
-            if (userList.length > 1900) {
-                userList = userList.substring(0, 1900) + '\n... (list truncated)';
-            }
+            const generateEmbed = (page) => {
+                const start = page * pageSize;
+                const end = start + pageSize;
+                const currentUsers = users.slice(start, end);
+                const listString = currentUsers.map(u => `• ${u.discordId} (${u.email})`).join('\n');
+                
+                return new EmbedBuilder()
+                    .setTitle(`Subscriber List (Total: ${users.length})`)
+                    .setDescription(listString || 'No users.')
+                    .setFooter({ text: `Page ${page + 1} of ${totalPages}` })
+                    .setColor(0x0099FF);
+            };
 
-            await interaction.editReply({ 
-                content: `**Total Subscribers: ${count}**\n\n${userList}`
+            const generateRow = (page) => {
+                return new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder().setCustomId('prev').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0),
+                        new ButtonBuilder().setCustomId('next').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page === totalPages - 1)
+                    );
+            };
+
+            const response = await interaction.editReply({ content: null, embeds: [generateEmbed(currentPage)], components: [generateRow(currentPage)] });
+
+            const collector = response.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300000 }); // 5 minutes
+
+            collector.on('collect', async i => {
+                if (i.customId === 'prev') currentPage = Math.max(0, currentPage - 1);
+                if (i.customId === 'next') currentPage = Math.min(totalPages - 1, currentPage + 1);
+                await i.update({ embeds: [generateEmbed(currentPage)], components: [generateRow(currentPage)] });
+            });
+
+            collector.on('end', () => {
+                interaction.editReply({ components: [] }).catch(() => {});
             });
         } catch (error) {
             console.error("Members Command Error:", error);
