@@ -126,23 +126,32 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: "❌ Failed to save to Remote DB.", ephemeral: true });
         }
     } else if (interaction.commandName === 'members') {
+        await interaction.deferReply({ ephemeral: true });
         try {
             const users = await User.find({});
             const count = users.length;
             
-            // Build a list string (Discord has a 2000 char limit, so we truncate if needed)
-            let userList = users.map(u => `• <@${u.discordId}> (${u.email})`).join('\n');
+            // Fetch usernames to display real names instead of mentions
+            const userLines = await Promise.all(users.map(async (u) => {
+                try {
+                    const discordUser = await client.users.fetch(u.discordId);
+                    return `• **${discordUser.username}** (${u.email})`;
+                } catch (e) {
+                    return `• <@${u.discordId}> (${u.email})`;
+                }
+            }));
+
+            let userList = userLines.join('\n');
             if (userList.length > 1900) {
                 userList = userList.substring(0, 1900) + '\n... (list truncated)';
             }
 
-            await interaction.reply({ 
-                content: `**Total Subscribers: ${count}**\n\n${userList || 'No subscribers yet.'}`, 
-                ephemeral: true 
+            await interaction.editReply({ 
+                content: `**Total Subscribers: ${count}**\n\n${userList || 'No subscribers yet.'}`
             });
         } catch (error) {
             console.error("Members Command Error:", error);
-            await interaction.reply({ content: "❌ Error fetching members list.", ephemeral: true });
+            await interaction.editReply({ content: "❌ Error fetching members list." });
         }
     } else if (interaction.commandName === 'prune-unsubscribed') {
         await interaction.deferReply({ ephemeral: true });
