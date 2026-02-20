@@ -129,10 +129,15 @@ client.on('interactionCreate', async interaction => {
         await interaction.deferReply({ ephemeral: true });
         try {
             const users = await User.find({});
+            if (!users || users.length === 0) {
+                await interaction.editReply({ content: "No subscribers found in the database." });
+                return;
+            }
             const count = users.length;
             
             // Fetch usernames to display real names instead of mentions
             const userLines = await Promise.all(users.map(async (u) => {
+                if (!u.discordId) return `• N/A (${u.email})`;
                 try {
                     const discordUser = await client.users.fetch(u.discordId);
                     return `• **${discordUser.username}** (${u.email})`;
@@ -147,11 +152,11 @@ client.on('interactionCreate', async interaction => {
             }
 
             await interaction.editReply({ 
-                content: `**Total Subscribers: ${count}**\n\n${userList || 'No subscribers yet.'}`
+                content: `**Total Subscribers: ${count}**\n\n${userList}`
             });
         } catch (error) {
             console.error("Members Command Error:", error);
-            await interaction.editReply({ content: "❌ Error fetching members list." });
+            await interaction.editReply({ content: `❌ Error fetching members list: ${error.message}` });
         }
     } else if (interaction.commandName === 'prune-unsubscribed') {
         await interaction.deferReply({ ephemeral: true });
