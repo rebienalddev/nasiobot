@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const express = require('express');
 const mongoose = require('mongoose'); // Using MongoDB instead of fs
 
@@ -38,7 +38,6 @@ client.once('ready', async () => {
             .addStringOption(option => 
                 option.setName('email')
                     .setDescription('The email used for subscription')
-                    .setRequired(true))
                     .setRequired(true)),
         new SlashCommandBuilder()
             .setName('members')
@@ -130,17 +129,43 @@ client.on('interactionCreate', async interaction => {
         try {
             const users = await User.find({});
             const count = users.length;
-            
-            // Build a list string (Discord has a 2000 char limit, so we truncate if needed)
-            let userList = users.map(u => `• <@${u.discordId}> (${u.email})`).join('\n');
-            if (userList.length > 1900) {
-                userList = userList.substring(0, 1900) + '\n... (list truncated)';
+
+            if (count === 0) {
+                return await interaction.reply({ content: 'No subscribers yet.', ephemeral: true });
             }
 
-            await interaction.reply({ 
-                content: `**Total Subscribers: ${count}**\n\n${userList || 'No subscribers yet.'}`, 
-                ephemeral: true 
-            });
+            const itemsPerPage = 10;
+            const totalPages = Math.ceil(count / itemsPerPage);
+            let currentPage = 0;
+
+            const generateMessage = (page) => {
+                const start = page * itemsPerPage;
+                const end = start + itemsPerPage;
+                const pageUsers = users.slice(start, end);
+                const userList = pageUsers.map(u => `• ${u.discordId}`).join('\n');
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('prev').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0),
+                    new ButtonBuilder().setCustomId('next').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page === totalPages - 1)
+                );
+
+                return {
+                    content: `**Total Subscribers: ${count}** (Page ${page + 1}/${totalPages})\n\n${userList}`,
+                    components: totalPages > 1 ? [row] : [],
+                    ephemeral: true
+                };
+            };
+
+            const response = await interaction.reply({ ...generateMessage(currentPage), fetchReply: true });
+
+            if (totalPages > 1) {
+                const collector = response.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300000 });
+                collector.on('collect', async i => {
+                    if (i.customId === 'prev') currentPage = Math.max(0, currentPage - 1);
+                    else if (i.customId === 'next') currentPage = Math.min(totalPages - 1, currentPage + 1);
+                    await i.update(generateMessage(currentPage));
+                });
+            }
         } catch (error) {
             console.error("Members Command Error:", error);
             await interaction.reply({ content: "❌ Error fetching members list.", ephemeral: true });
