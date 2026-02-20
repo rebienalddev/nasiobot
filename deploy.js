@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 const commands = [
     new SlashCommandBuilder()
@@ -9,6 +9,13 @@ const commands = [
             option.setName('email')
             .setDescription('Your nas.io email')
             .setRequired(true)),
+    new SlashCommandBuilder()
+        .setName('members')
+        .setDescription('View real-time subscriber list'),
+    new SlashCommandBuilder()
+        .setName('prune-unsubscribed')
+        .setDescription('Automatically kick users who are not subscribed')
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
